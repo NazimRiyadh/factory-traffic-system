@@ -231,6 +231,8 @@ In accordance with the assessment submission requirements, AI tooling (Google De
 
 All architectural decisions, safety invariant proofs, concurrency locking schemes, and test validations were reviewed, verified, and executed against the live test runners.
 
+A full engineering dialogue and pair-programming transcript is documented in [AI_CHAT_HISTORY.md](AI_CHAT_HISTORY.md).
+
 ---
 
 ## 📡 REST API Reference
