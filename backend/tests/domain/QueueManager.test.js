@@ -1,5 +1,5 @@
-const QueueManager = require('../../domain/QueueManager');
-const { VEHICLE_TYPES } = require('../../domain/constants');
+import QueueManager from '../../domain/QueueManager.js';
+import { VEHICLE_TYPES } from '../../domain/constants.js';
 
 describe('QueueManager', () => {
   let emptyQueue;

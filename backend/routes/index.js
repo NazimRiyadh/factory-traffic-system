@@ -2,14 +2,14 @@
  * Application Routes.
  */
 
-const express = require('express');
-const {
+import express from 'express';
+import {
   validateSensorEventBody,
   validateCommandBody,
   validateControllerEventBody,
-} = require('../middleware/validateRequest');
+} from '../middleware/validateRequest.js';
 
-function createRouter({
+export function createRouter({
   junctionController,
   sensorEventController,
   commandController,
@@ -50,4 +50,4 @@ function createRouter({
   return router;
 }
 
-module.exports = createRouter;
+export default createRouter;

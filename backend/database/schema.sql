@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS junctions (
   manual_override_at TEXT,                    -- when manual override started (ISO string)
   emergency_direction TEXT,                   -- direction of active emergency vehicle
   emergency_started_at TEXT,                  -- when emergency mode started
+  emergency_queue TEXT DEFAULT '[]',          -- JSON array of waiting emergency vehicles: [{"vehicle_id", "direction", "arrived_at"}]
+  phase_started_at TEXT,                      -- timestamp when current phase became green
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

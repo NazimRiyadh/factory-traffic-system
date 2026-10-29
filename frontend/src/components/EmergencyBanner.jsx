@@ -1,7 +1,9 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
 
-export default function EmergencyBanner({ emergencyDirection, emergencyStartedAt }) {
+export default function EmergencyBanner({ emergencyDirection, emergencyStartedAt, emergencyQueue = [] }) {
+  const queuedItems = Array.isArray(emergencyQueue) ? emergencyQueue : [];
+
   return (
     <div className="zapier-emergency-banner">
       <div className="banner-left">
@@ -14,6 +16,16 @@ export default function EmergencyBanner({ emergencyDirection, emergencyStartedAt
             Emergency approaching from <strong>{emergencyDirection || 'UNKNOWN'}</strong>.
             Conflicting roadway phases are held RED until the lane clears.
           </div>
+          {queuedItems.length > 0 && (
+            <div className="banner-queue-note">
+              <span>Arbitration Queue ({queuedItems.length} waiting):</span>{' '}
+              {queuedItems.map((e, idx) => (
+                <span key={idx} className="queued-tag">
+                  {e.direction} ({e.vehicle_id})
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {emergencyStartedAt && (
@@ -63,6 +75,24 @@ export default function EmergencyBanner({ emergencyDirection, emergencyStartedAt
         }
         .banner-subtext strong {
           color: var(--color-ink);
+        }
+        .banner-queue-note {
+          margin-top: 6px;
+          font-size: 12.5px;
+          color: var(--color-ink);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .queued-tag {
+          background-color: #fca5a5;
+          color: #7f1d1d;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-family: var(--font-mono);
+          font-size: 11px;
         }
         .banner-time-tag {
           font-family: var(--font-mono);

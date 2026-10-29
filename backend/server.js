@@ -2,48 +2,52 @@
  * Factory Traffic Management System — Backend Server Entry Point.
  */
 
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const config = require('./config');
-const { getDb } = require('./database/connection');
-const { runMigrations } = require('./database/migrations');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import process from 'process';
+import { fileURLToPath } from 'url';
+
+import config from './config/index.js';
+import { getDb } from './database/connection.js';
+import { runMigrations } from './database/migrations.js';
 
 // Repositories
-const JunctionRepository = require('./repositories/JunctionRepository');
-const EventRepository = require('./repositories/EventRepository');
-const HistoryRepository = require('./repositories/HistoryRepository');
-const CommandRepository = require('./repositories/CommandRepository');
+import JunctionRepository from './repositories/JunctionRepository.js';
+import EventRepository from './repositories/EventRepository.js';
+import HistoryRepository from './repositories/HistoryRepository.js';
+import CommandRepository from './repositories/CommandRepository.js';
 
 // Services
-const SignalTimerManager = require('./services/SignalTimerManager');
-const JunctionService = require('./services/JunctionService');
-const EventService = require('./services/EventService');
-const CommandService = require('./services/CommandService');
-const ControllerService = require('./services/ControllerService');
-const HistoryService = require('./services/HistoryService');
+import SignalTimerManager from './services/SignalTimerManager.js';
+import JunctionService from './services/JunctionService.js';
+import EventService from './services/EventService.js';
+import CommandService from './services/CommandService.js';
+import ControllerService from './services/ControllerService.js';
+import HistoryService from './services/HistoryService.js';
 
 // Controllers
-const JunctionController = require('./controllers/junctionController');
-const SensorEventController = require('./controllers/sensorEventController');
-const CommandController = require('./controllers/commandController');
-const ControllerEventController = require('./controllers/controllerEventController');
-const HistoryController = require('./controllers/historyController');
+import JunctionController from './controllers/junctionController.js';
+import SensorEventController from './controllers/sensorEventController.js';
+import CommandController from './controllers/commandController.js';
+import ControllerEventController from './controllers/controllerEventController.js';
+import HistoryController from './controllers/historyController.js';
 
 // Router & Middleware
-const createRouter = require('./routes');
-const errorHandler = require('./middleware/errorHandler');
-const logger = require('./utils/logger');
+import createRouter from './routes/index.js';
+import errorHandler from './middleware/errorHandler.js';
+import logger from './utils/logger.js';
 
-function createApp() {
+export function createApp(options = {}) {
   const app = express();
+  const activeConfig = { ...config, ...(options.config || {}) };
 
   // Middleware
   app.use(cors());
   app.use(express.json());
 
   // Database initialization
-  const db = getDb();
+  const db = options.db || getDb();
   runMigrations(db);
 
   // Repositories
@@ -53,19 +57,20 @@ function createApp() {
   const commandRepo = new CommandRepository(db);
 
   // Services
-  const timerManager = new SignalTimerManager(junctionRepo, commandRepo, historyRepo, config);
-  const controllerService = new ControllerService(junctionRepo, commandRepo, historyRepo, config);
-  const junctionService = new JunctionService(junctionRepo, commandRepo, historyRepo, timerManager, config);
-  const eventService = new EventService(junctionRepo, eventRepo, historyRepo, timerManager, config);
-  const commandService = new CommandService(junctionRepo, historyRepo, timerManager, config);
+  const timerManager = new SignalTimerManager(junctionRepo, commandRepo, historyRepo, activeConfig);
+  const controllerService = new ControllerService(junctionRepo, commandRepo, historyRepo, timerManager, activeConfig);
+  const junctionService = new JunctionService(junctionRepo, commandRepo, historyRepo, timerManager, activeConfig);
+  const eventService = new EventService(junctionRepo, eventRepo, historyRepo, timerManager, activeConfig);
+  const commandService = new CommandService(junctionRepo, historyRepo, timerManager, activeConfig);
   const historyService = new HistoryService(historyRepo);
 
   // Auto-ACK controller simulation: automatically confirms hardware commands unless OFFLINE
-  if (config.CONTROLLER_AUTO_ACK) {
+  if (activeConfig.CONTROLLER_AUTO_ACK) {
     timerManager.onCommandsDispatched = (junctionId, commands) => {
       setTimeout(() => {
+        if (!db.open) return;
         const junction = junctionRepo.findById(junctionId);
-        if (junction && junction.controller_status !== 'OFFLINE') {
+        if (junction && junction.controller_status !== 'OFFLINE' && junction.controller_status !== 'DEGRADED') {
           for (const cmd of commands) {
             controllerService.processControllerEvent({
               command_id: cmd.command_id,
@@ -73,15 +78,18 @@ function createApp() {
               direction: cmd.direction,
               status: 'ACK',
               actual_state: cmd.requested_state
-            });
+            }).catch(err => logger.error(`[${junctionId}] Auto-ACK error:`, err));
           }
         }
-      }, config.CONTROLLER_SIM_DELAY || 400);
+      }, activeConfig.CONTROLLER_SIM_DELAY || 400);
     };
   }
 
-  // Clear any stale pending timeouts from previous runs
-  controllerService.simulateAcknowledgeAll('A');
+  // Recover state after restart without fabricating simulated ACKs
+  const allJunctions = junctionRepo.findAll();
+  for (const j of allJunctions) {
+    controllerService.recoverJunctionAfterRestart(j.id);
+  }
 
   // Controllers
   const junctionController = new JunctionController(junctionService, controllerService);
@@ -107,20 +115,29 @@ function createApp() {
   return {
     app,
     db,
+    repositories: {
+      junctionRepo,
+      eventRepo,
+      historyRepo,
+      commandRepo,
+    },
     services: {
       junctionService,
       eventService,
       commandService,
       controllerService,
       historyService,
-      timerManager
-    }
+      timerManager,
+    },
   };
 }
 
-const { app } = createApp();
+export const { app } = createApp();
 
-if (require.main === module) {
+const isDirectRun = process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isDirectRun) {
   const PORT = config.PORT || 3001;
   const server = app.listen(PORT, () => {
     logger.info(`🚦 Factory Traffic Backend running at http://localhost:${PORT}`);
@@ -135,4 +152,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, createApp };
+export default { app, createApp };

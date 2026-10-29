@@ -11,8 +11,8 @@ class CommandRepository {
     const { command_id, junction_id, direction, requested_state, status = 'PENDING' } = command;
 
     this.db.prepare(`
-      INSERT INTO pending_commands (command_id, junction_id, direction, requested_state, status, retries)
-      VALUES (?, ?, ?, ?, ?, 0)
+      INSERT INTO pending_commands (command_id, junction_id, direction, requested_state, status, retries, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
     `).run(command_id, junction_id, direction, requested_state, status);
 
     return this.findById(command_id);
@@ -37,6 +37,7 @@ class CommandRepository {
     return this.db.prepare(`
       UPDATE pending_commands
       SET retries = retries + 1,
+          created_at = datetime('now'),
           updated_at = datetime('now')
       WHERE command_id = ?
     `).run(commandId);
@@ -65,6 +66,23 @@ class CommandRepository {
         AND (strftime('%s', 'now') - strftime('%s', created_at)) > ?
     `).all(timeoutSeconds);
   }
+
+  markAllPendingFailed(junctionId = null, reason = 'RESTART_RECOVERY') {
+    if (junctionId) {
+      return this.db.prepare(`
+        UPDATE pending_commands
+        SET status = 'FAILED',
+            updated_at = datetime('now')
+        WHERE junction_id = ? AND status IN ('PENDING', 'SENT')
+      `).run(junctionId);
+    }
+    return this.db.prepare(`
+      UPDATE pending_commands
+      SET status = 'FAILED',
+          updated_at = datetime('now')
+      WHERE status IN ('PENDING', 'SENT')
+    `).run();
+  }
 }
 
-module.exports = CommandRepository;
+export default CommandRepository;

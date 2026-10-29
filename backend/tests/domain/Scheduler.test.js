@@ -1,6 +1,6 @@
-const Scheduler = require('../../domain/Scheduler');
-const { VEHICLE_TYPES } = require('../../domain/constants');
-const config = require('../../config');
+import Scheduler from '../../domain/Scheduler.js';
+import { VEHICLE_TYPES } from '../../domain/constants.js';
+import config from '../../config/index.js';
 
 describe('Scheduler', () => {
   test('returns null when all queues are empty', () => {

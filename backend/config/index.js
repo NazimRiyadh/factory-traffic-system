@@ -1,6 +1,12 @@
-module.exports = {
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const config = {
   PORT: 3001,
-  DB_PATH: './traffic.db',
+  DB_PATH: process.env.DB_PATH || path.resolve(__dirname, '../traffic.db'),
 
   // Signal timing (milliseconds)
   GREEN_DURATION: 30000,       // 30 seconds
@@ -45,3 +51,5 @@ module.exports = {
     STARVATION_BONUS: 100,
   },
 };
+
+export default config;

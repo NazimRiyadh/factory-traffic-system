@@ -1,12 +1,15 @@
-const request = require('supertest');
-const { createApp } = require('../../server');
+import request from 'supertest';
+import { createApp } from '../../server.js';
+import { getDb } from '../../database/connection.js';
 
 describe('REST API Integration Tests', () => {
   let app;
   let services;
+  let db;
 
   beforeAll(() => {
-    const instance = createApp();
+    db = getDb(':memory:');
+    const instance = createApp({ db });
     app = instance.app;
     services = instance.services;
   });
@@ -17,6 +20,12 @@ describe('REST API Integration Tests', () => {
     }
     if (services.controllerService) {
       services.controllerService.destroy();
+    }
+    if (services.junctionService) {
+      services.junctionService.destroy();
+    }
+    if (db) {
+      db.close();
     }
   });
 

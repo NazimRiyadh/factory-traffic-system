@@ -1,9 +1,13 @@
 /**
  * CommandService — Handles manual override commands and transitions to automatic.
+ *
+ * Uses shared junctionLock to serialize with events and controller callbacks.
+ * Returns up-to-date persisted mode and transition status.
  */
 
-const TrafficEngine = require('../domain/TrafficEngine');
-const logger = require('../utils/logger');
+import TrafficEngine from '../domain/TrafficEngine.js';
+import logger from '../utils/logger.js';
+import junctionLock from '../utils/junctionLock.js';
 
 class CommandService {
   constructor(junctionRepo, historyRepo, timerManager, config) {
@@ -11,42 +15,22 @@ class CommandService {
     this.historyRepo = historyRepo;
     this.timerManager = timerManager;
     this.config = config;
-
-    this.junctionLocks = new Map();
-  }
-
-  async withJunctionLock(junctionId, fn) {
-    if (!this.junctionLocks.has(junctionId)) {
-      this.junctionLocks.set(junctionId, Promise.resolve());
-    }
-
-    const prevLock = this.junctionLocks.get(junctionId);
-    let releaseLock;
-    const newLock = new Promise(resolve => { releaseLock = resolve; });
-    this.junctionLocks.set(junctionId, newLock);
-
-    await prevLock;
-    try {
-      return await fn();
-    } finally {
-      releaseLock();
-    }
   }
 
   async processCommand(junctionId, command) {
-    return this.withJunctionLock(junctionId, async () => {
+    return junctionLock.runExclusive(junctionId, async () => {
       const junction = this.junctionRepo.findById(junctionId);
       if (!junction) {
         return {
           success: false,
           statusCode: 404,
-          message: `Junction '${junctionId}' not found`
+          message: `Junction '${junctionId}' not found`,
         };
       }
 
       const junctionState = {
         ...junction,
-        transitioning: this.timerManager ? this.timerManager.isTransitioning(junctionId) : false
+        transitioning: this.timerManager ? this.timerManager.isTransitioning(junctionId) : false,
       };
 
       const result = TrafficEngine.processCommand(junctionState, command, this.config);
@@ -56,22 +40,24 @@ class CommandService {
         return {
           success: false,
           statusCode: isConflict ? 409 : 400,
-          message: result.reason
+          message: result.reason,
         };
       }
+
+      let transitionOutcome = null;
 
       for (const action of result.actions) {
         switch (action.type) {
           case 'SET_MODE':
             this.junctionRepo.updateMode(junctionId, action.mode, {
               by: action.override_by,
-              at: new Date().toISOString()
+              at: new Date().toISOString(),
             });
             break;
 
           case 'START_TRANSITION':
             if (this.timerManager) {
-              this.timerManager.startTransition(
+              transitionOutcome = this.timerManager.startTransition(
                 junctionId,
                 junction.current_phase,
                 action.targetPhase,
@@ -89,14 +75,24 @@ class CommandService {
         }
       }
 
+      // Fetch fresh persisted state after command actions
+      const freshJunction = this.junctionRepo.findById(junctionId);
+      const isTransitioning = this.timerManager ? this.timerManager.isTransitioning(junctionId) : false;
+
       return {
         success: true,
         statusCode: 200,
         message: result.reason,
-        mode: junctionState.mode
+        mode: freshJunction.mode,
+        transition: {
+          in_progress: isTransitioning,
+          status: isTransitioning ? 'IN_PROGRESS' : 'COMPLETED',
+          current_phase: freshJunction.current_phase,
+          target_phase: result.targetPhase || freshJunction.current_phase,
+        },
       };
     });
   }
 }
 
-module.exports = CommandService;
+export default CommandService;

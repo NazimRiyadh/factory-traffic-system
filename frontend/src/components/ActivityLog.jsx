@@ -1,30 +1,29 @@
-import React from 'react';
-import { History } from 'lucide-react';
+import React from "react";
 
 export default function ActivityLog({ history = [] }) {
   const safeHistory = Array.isArray(history) ? history : [];
 
   const getEventTagStyle = (eventType) => {
     switch (eventType) {
-      case 'VEHICLE_DETECTED':
-      case 'CONTROLLER_ACK':
-        return 'tag-green';
-      case 'VEHICLE_CLEARED':
-      case 'PHASE_CHANGED':
-        return 'tag-blue';
-      case 'SIGNAL_TRANSITION_STARTED':
-      case 'SIGNAL_STATE_REQUESTED':
-        return 'tag-amber';
-      case 'EMERGENCY_DETECTED':
-      case 'SAFETY_VIOLATION_PREVENTED':
-        return 'tag-red';
-      case 'MANUAL_OVERRIDE_ACTIVATED':
-        return 'tag-purple';
-      case 'CONTROLLER_TIMEOUT':
-      case 'CONTROLLER_FAILURE':
-        return 'tag-orange';
+      case "VEHICLE_DETECTED":
+      case "CONTROLLER_ACK":
+        return "tag-green";
+      case "VEHICLE_CLEARED":
+      case "PHASE_CHANGED":
+        return "tag-blue";
+      case "SIGNAL_TRANSITION_STARTED":
+      case "SIGNAL_STATE_REQUESTED":
+        return "tag-amber";
+      case "EMERGENCY_DETECTED":
+      case "SAFETY_VIOLATION_PREVENTED":
+        return "tag-red";
+      case "MANUAL_OVERRIDE_ACTIVATED":
+        return "tag-purple";
+      case "CONTROLLER_TIMEOUT":
+      case "CONTROLLER_FAILURE":
+        return "tag-orange";
       default:
-        return 'tag-neutral';
+        return "tag-neutral";
     }
   };
 
@@ -35,26 +34,32 @@ export default function ActivityLog({ history = [] }) {
           <span className="eyebrow">Audit & Compliance</span>
           <h3>Event History Stream</h3>
         </div>
-        <span className="log-count-pill">{safeHistory.length} events logged</span>
+        <span className="log-count-pill">
+          {safeHistory.length} events logged
+        </span>
       </div>
 
       <div className="log-scroll-view">
         {safeHistory.length === 0 ? (
-          <div className="empty-log-state">No events recorded in this session.</div>
+          <div className="empty-log-state">
+            No events recorded in this session.
+          </div>
         ) : (
           safeHistory.slice(0, 40).map((item) => (
             <div key={item.id} className="log-row">
               <span className="log-time font-mono">
                 {new Date(item.timestamp).toLocaleTimeString()}
               </span>
-              <span className={`log-event-badge ${getEventTagStyle(item.event_type)}`}>
+              <span
+                className={`log-event-badge ${getEventTagStyle(item.event_type)}`}
+              >
                 {item.event_type}
               </span>
               {item.direction && (
                 <span className="log-dir-chip font-mono">{item.direction}</span>
               )}
               <span className="log-json-text font-mono">
-                {item.details ? JSON.stringify(item.details) : '—'}
+                {item.details ? JSON.stringify(item.details) : "—"}
               </span>
             </div>
           ))

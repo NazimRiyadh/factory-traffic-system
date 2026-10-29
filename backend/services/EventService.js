@@ -1,13 +1,18 @@
 /**
- * EventService — Ingests and processes sensor events with per-junction locking.
+ * EventService — Ingests and processes sensor events with per-junction serialization.
  *
- * Prevents race conditions and guarantees sequential processing per junction.
+ * Guarantees:
+ * - Persistent, database-level event deduplication (idempotent)
+ * - Atomic state mutations (queue, event record, history) inside SQLite transactions
+ * - Deterministic emergency arbitration (FCFS queue for conflicting emergencies)
+ * - Centralized scheduling respecting minimum green durations
  */
 
-const TrafficEngine = require('../domain/TrafficEngine');
-const SignalPhase = require('../domain/SignalPhase');
-const { JUNCTION_MODES } = require('../domain/constants');
-const logger = require('../utils/logger');
+import TrafficEngine from '../domain/TrafficEngine.js';
+import SignalPhase from '../domain/SignalPhase.js';
+import { JUNCTION_MODES } from '../domain/constants.js';
+import logger from '../utils/logger.js';
+import junctionLock from '../utils/junctionLock.js';
 
 class EventService {
   constructor(junctionRepo, eventRepo, historyRepo, timerManager, config) {
@@ -16,131 +21,139 @@ class EventService {
     this.historyRepo = historyRepo;
     this.timerManager = timerManager;
     this.config = config;
-
-    // Mutex map: junctionId -> Promise
-    this.junctionLocks = new Map();
-  }
-
-  /**
-   * Acquire sequential execution lock for a given junction.
-   */
-  async withJunctionLock(junctionId, fn) {
-    if (!this.junctionLocks.has(junctionId)) {
-      this.junctionLocks.set(junctionId, Promise.resolve());
-    }
-
-    const prevLock = this.junctionLocks.get(junctionId);
-    let releaseLock;
-    const newLock = new Promise(resolve => { releaseLock = resolve; });
-    this.junctionLocks.set(junctionId, newLock);
-
-    await prevLock;
-    try {
-      return await fn();
-    } finally {
-      releaseLock();
-    }
   }
 
   async processEvent(event) {
     const junctionId = event.junction_id;
 
-    return this.withJunctionLock(junctionId, async () => {
-      // 1. Fetch current junction state
+    return junctionLock.runExclusive(junctionId, async () => {
+      // 1. Authoritative server receipt timestamp
+      const serverReceiptTime = new Date().toISOString();
+      const enrichedEvent = {
+        ...event,
+        server_received_at: serverReceiptTime,
+      };
+
+      // 2. Fetch current junction state
       const junction = this.junctionRepo.findById(junctionId);
       if (!junction) {
         return {
           status: 'ERROR',
           statusCode: 404,
-          message: `Junction '${junctionId}' not found`
+          message: `Junction '${junctionId}' not found`,
         };
       }
 
-      // 2. Fetch processed event ids for deduplication
-      const processedEventIds = this.eventRepo.getProcessedEventIds(junctionId, 500);
+      // 3. Persistent deduplication check
+      if (this.eventRepo.isProcessed(enrichedEvent.event_id)) {
+        return {
+          status: 'IGNORED',
+          statusCode: 200,
+          message: 'Duplicate event already processed (idempotent)',
+          event_id: enrichedEvent.event_id,
+        };
+      }
 
-      // 3. Build state object for domain engine
+      // 4. Build state object for domain engine
       const junctionState = {
         ...junction,
-        processedEventIds,
-        transitioning: this.timerManager ? this.timerManager.isTransitioning(junctionId) : false
+        transitioning: this.timerManager ? this.timerManager.isTransitioning(junctionId) : false,
       };
 
-      // 4. Process event via pure domain engine
+      // 5. Process event via pure domain engine
       const { actions, updatedState } = TrafficEngine.processSensorEvent(
         junctionState,
-        event,
+        enrichedEvent,
         this.config
       );
 
       let isDuplicate = false;
       let isRejected = false;
       let rejectReason = null;
+      let transitionToStart = null;
 
-      // 5. Execute actions returned by domain engine
-      for (const action of actions) {
-        switch (action.type) {
-          case 'REJECT_EVENT':
-            isRejected = true;
-            rejectReason = action.reason;
-            if (action.reason === 'DUPLICATE_EVENT') {
-              isDuplicate = true;
-            }
-            break;
-
-          case 'MARK_EVENT_PROCESSED':
-            this.eventRepo.markProcessed(action.eventId, junctionId);
-            break;
-
-          case 'UPDATE_QUEUE':
-            this.junctionRepo.updateQueueAndVehicles(junctionId, action.direction, action.queue);
-            break;
-
-          case 'LOG_HISTORY':
-            this.historyRepo.log(junctionId, action.eventType, action.direction, action.details);
-            break;
-
-          case 'TRIGGER_EMERGENCY': {
-            const now = new Date().toISOString();
-            this.junctionRepo.updateEmergency(junctionId, JUNCTION_MODES.EMERGENCY, action.direction, now);
-
-            // Transition directly to the emergency phase
-            const emergencyPhase = SignalPhase.getPhaseForDirection(action.direction);
-            if (emergencyPhase && this.timerManager) {
-              this.timerManager.startTransition(
-                junctionId,
-                junction.current_phase,
-                emergencyPhase,
-                'EMERGENCY'
-              );
-            }
-            break;
-          }
-
-          case 'CLEAR_EMERGENCY': {
-            this.junctionRepo.updateEmergency(junctionId, JUNCTION_MODES.AUTOMATIC, null, null);
-            this.historyRepo.log(junctionId, 'MODE_CHANGED', null, {
-              from: JUNCTION_MODES.EMERGENCY,
-              to: JUNCTION_MODES.AUTOMATIC
-            });
-
-            // Trigger scheduler to resume normal operations
-            setTimeout(() => {
-              const freshJunction = this.junctionRepo.findById(junctionId);
-              if (freshJunction && freshJunction.mode === JUNCTION_MODES.AUTOMATIC) {
-                const Scheduler = require('../domain/Scheduler');
-                const nextPhase = Scheduler.selectNextPhase(freshJunction.queues, freshJunction.current_phase, this.config);
-                if (nextPhase && nextPhase !== freshJunction.current_phase && this.timerManager) {
-                  this.timerManager.startTransition(junctionId, freshJunction.current_phase, nextPhase, 'AUTOMATIC_SCHEDULING');
-                }
+      // 6. Execute state mutations atomically inside SQLite transaction
+      const db = this.junctionRepo.db;
+      const applyActionsTx = db.transaction(() => {
+        for (const action of actions) {
+          switch (action.type) {
+            case 'REJECT_EVENT':
+              isRejected = true;
+              rejectReason = action.reason;
+              if (action.reason === 'DUPLICATE_EVENT') {
+                isDuplicate = true;
               }
-            }, 100);
-            break;
-          }
+              break;
 
-          default:
-            logger.warn(`Unknown action type: ${action.type}`);
+            case 'MARK_EVENT_PROCESSED':
+              this.eventRepo.insertProcessed(action.eventId, junctionId);
+              break;
+
+            case 'UPDATE_QUEUE':
+              this.junctionRepo.updateQueueAndVehicles(junctionId, action.direction, action.queue);
+              break;
+
+            case 'LOG_HISTORY':
+              this.historyRepo.log(junctionId, action.eventType, action.direction, action.details);
+              break;
+
+            case 'TRIGGER_EMERGENCY': {
+              const now = new Date().toISOString();
+              this.junctionRepo.updateEmergency(junctionId, JUNCTION_MODES.EMERGENCY, action.direction, now);
+              const emergencyPhase = SignalPhase.getPhaseForDirection(action.direction);
+              if (emergencyPhase) {
+                transitionToStart = {
+                  phase: emergencyPhase,
+                  reason: 'EMERGENCY',
+                };
+              }
+              break;
+            }
+
+            case 'QUEUE_EMERGENCY':
+              this.junctionRepo.updateEmergencyQueue(junctionId, action.emergencyQueue);
+              break;
+
+            case 'PROMOTE_EMERGENCY': {
+              const now = new Date().toISOString();
+              this.junctionRepo.updateEmergency(
+                junctionId,
+                JUNCTION_MODES.EMERGENCY,
+                action.nextEmergency.direction,
+                now,
+                action.remainingQueue
+              );
+              const emergencyPhase = SignalPhase.getPhaseForDirection(action.nextEmergency.direction);
+              if (emergencyPhase) {
+                transitionToStart = {
+                  phase: emergencyPhase,
+                  reason: 'EMERGENCY',
+                };
+              }
+              break;
+            }
+
+            case 'CLEAR_EMERGENCY': {
+              this.junctionRepo.updateEmergency(junctionId, JUNCTION_MODES.AUTOMATIC, null, null, []);
+              break;
+            }
+
+            default:
+              logger.warn(`Unknown action type: ${action.type}`);
+          }
         }
+      });
+
+      applyActionsTx();
+
+      // 7. If transition was triggered by emergency preemption or promotion, start it safely
+      if (transitionToStart && this.timerManager) {
+        this.timerManager.startTransition(
+          junctionId,
+          junction.current_phase,
+          transitionToStart.phase,
+          transitionToStart.reason
+        );
       }
 
       if (isDuplicate) {
@@ -148,7 +161,7 @@ class EventService {
           status: 'IGNORED',
           statusCode: 200,
           message: 'Duplicate event already processed (idempotent)',
-          event_id: event.event_id
+          event_id: event.event_id,
         };
       }
 
@@ -157,24 +170,25 @@ class EventService {
           status: 'REJECTED',
           statusCode: 400,
           message: rejectReason,
-          event_id: event.event_id
+          event_id: event.event_id,
         };
       }
 
-      // If in AUTOMATIC mode, check if we need an automatic scheduling transition
+      // 8. Automatic scheduling check: Centralized, respecting minimum green duration
       const currentMode = updatedState.mode || junction.mode;
       const isTransitioning = this.timerManager ? this.timerManager.isTransitioning(junctionId) : false;
 
       if (currentMode === JUNCTION_MODES.AUTOMATIC && !isTransitioning) {
-        const nextPhase = TrafficEngine.evaluateAutomaticScheduling(
+        const nextSchedule = TrafficEngine.evaluateAutomaticScheduling(
           { ...updatedState, transitioning: isTransitioning },
-          this.config
+          this.config,
+          Date.now()
         );
-        if (nextPhase && nextPhase.targetPhase && nextPhase.targetPhase !== junction.current_phase && this.timerManager) {
+        if (nextSchedule && nextSchedule.targetPhase && nextSchedule.targetPhase !== junction.current_phase && this.timerManager) {
           this.timerManager.startTransition(
             junctionId,
             junction.current_phase,
-            nextPhase.targetPhase,
+            nextSchedule.targetPhase,
             'AUTOMATIC_SCHEDULING'
           );
         }
@@ -185,10 +199,10 @@ class EventService {
         statusCode: 200,
         message: 'Event processed successfully',
         event_id: event.event_id,
-        direction: event.direction
+        direction: event.direction,
       };
     });
   }
 }
 
-module.exports = EventService;
+export default EventService;

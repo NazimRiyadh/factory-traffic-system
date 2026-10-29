@@ -7,11 +7,10 @@
  *   - Waiting time (longer wait = higher score)
  *   - Starvation protection (bonus after threshold exceeded)
  *
- * The exact weights are configurable via config. This module is pure logic
- * with zero I/O dependencies.
+ * The exact weights are configurable via config. Pure logic with zero I/O.
  */
 
-const { PHASES } = require('./constants');
+import { PHASES } from './constants.js';
 
 class Scheduler {
   /**
@@ -79,10 +78,10 @@ class Scheduler {
    * @param {object} queues        - all direction queues
    * @param {string} currentPhase  - currently active phase
    * @param {object} config        - configuration with weights/priorities
+   * @param {number} [now]         - optional timestamp ms
    * @returns {string|null} - phase name to switch to, or null if no change needed
    */
-  static selectNextPhase(queues, currentPhase, config) {
-    const now = Date.now();
+  static selectNextPhase(queues, currentPhase, config, now = Date.now()) {
     const scores = {};
 
     for (const phaseName of Object.keys(PHASES)) {
@@ -100,33 +99,18 @@ class Scheduler {
       }
     }
 
-    // If best phase has score 0 or less (no vehicles anywhere), don't switch
-    if (bestScore <= 0) return null;
+    // If all queues are empty, bestScore is 0 -> don't switch
+    if (bestScore === 0) {
+      return null;
+    }
 
-    // If current phase still has the highest score, don't switch
-    // (avoids unnecessary phase changes when traffic is balanced)
-    if (bestPhase === currentPhase) return null;
+    // Don't switch if current phase is already the best
+    if (bestPhase === currentPhase) {
+      return null;
+    }
 
     return bestPhase;
   }
-
-  /**
-   * Get scores for all phases (useful for debugging / dashboard display).
-   *
-   * @param {object} queues
-   * @param {object} config
-   * @returns {object} - { NORTH_SOUTH: 42, EAST_WEST: 85 }
-   */
-  static getAllScores(queues, config) {
-    const now = Date.now();
-    const scores = {};
-
-    for (const phaseName of Object.keys(PHASES)) {
-      scores[phaseName] = this.scorePhase(phaseName, queues, config, now);
-    }
-
-    return scores;
-  }
 }
 
-module.exports = Scheduler;
+export default Scheduler;

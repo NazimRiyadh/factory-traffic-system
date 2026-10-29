@@ -2,7 +2,7 @@
  * Request validation helpers.
  */
 
-function validateSensorEventBody(req, res, next) {
+export function validateSensorEventBody(req, res, next) {
   const { event_id, junction_id, direction, event_type, vehicle_id } = req.body || {};
 
   if (!event_id) {
@@ -30,7 +30,7 @@ function validateSensorEventBody(req, res, next) {
   next();
 }
 
-function validateCommandBody(req, res, next) {
+export function validateCommandBody(req, res, next) {
   const { command } = req.body || {};
 
   if (!command) {
@@ -46,8 +46,8 @@ function validateCommandBody(req, res, next) {
   next();
 }
 
-function validateControllerEventBody(req, res, next) {
-  const { junction_id, status } = req.body || {};
+export function validateControllerEventBody(req, res, next) {
+  const { junction_id, status, command_id, actual_state, direction } = req.body || {};
 
   if (!junction_id) {
     return res.status(400).json({ error: 'ValidationError', message: 'Missing required field: junction_id' });
@@ -58,11 +58,28 @@ function validateControllerEventBody(req, res, next) {
   if (!['ACK', 'NACK', 'OFFLINE', 'ONLINE', 'FAILED'].includes(status)) {
     return res.status(400).json({ error: 'ValidationError', message: 'Invalid status. Must be ACK, NACK, OFFLINE, ONLINE, or FAILED' });
   }
+  if (status === 'ACK') {
+    if (!command_id) {
+      return res.status(400).json({ error: 'ValidationError', message: 'Missing required field for ACK: command_id' });
+    }
+    if (!actual_state) {
+      return res.status(400).json({ error: 'ValidationError', message: 'Missing required field for ACK: actual_state' });
+    }
+    if (!['RED', 'YELLOW', 'GREEN'].includes(actual_state)) {
+      return res.status(400).json({ error: 'ValidationError', message: 'Invalid actual_state for ACK. Must be RED, YELLOW, or GREEN' });
+    }
+    if (!direction) {
+      return res.status(400).json({ error: 'ValidationError', message: 'Missing required field for ACK: direction' });
+    }
+    if (!['NORTH', 'SOUTH', 'EAST', 'WEST'].includes(direction)) {
+      return res.status(400).json({ error: 'ValidationError', message: 'Invalid direction for ACK. Must be NORTH, SOUTH, EAST, or WEST' });
+    }
+  }
 
   next();
 }
 
-module.exports = {
+export default {
   validateSensorEventBody,
   validateCommandBody,
   validateControllerEventBody,

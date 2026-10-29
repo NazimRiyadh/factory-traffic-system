@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Send, Zap, Radio, Sliders } from 'lucide-react';
-import { submitSensorEvent, submitControllerEvent } from '../api/trafficApi';
+import { Send, Zap, Radio } from 'lucide-react';
+import { submitSensorEvent, submitControllerEvent, simulateAck } from '../api/trafficApi';
 
 export default function SimulationPanel({ junctionId, onEventSimulated }) {
   const [eventType, setEventType] = useState('VEHICLE_ARRIVED');
@@ -13,6 +13,7 @@ export default function SimulationPanel({ junctionId, onEventSimulated }) {
   const [controllerStatus, setControllerStatus] = useState('ACK');
   const [controllerDirection, setControllerDirection] = useState('NORTH');
   const [controllerState, setControllerState] = useState('GREEN');
+  const [commandId, setCommandId] = useState('');
   const [isSubmittingController, setIsSubmittingController] = useState(false);
   const [controllerFeedback, setControllerFeedback] = useState(null);
 
@@ -53,20 +54,54 @@ export default function SimulationPanel({ junctionId, onEventSimulated }) {
     setIsSubmittingController(true);
     setControllerFeedback(null);
 
-    const eventPayload = {
-      command_id: `sim_cmd_${Date.now()}`,
-      junction_id: junctionId,
-      direction: controllerDirection,
-      status: controllerStatus,
-      actual_state: controllerState
-    };
-
     try {
-      await submitControllerEvent(eventPayload);
-      setControllerFeedback({
-        type: 'success',
-        text: `Controller event registered: ${controllerStatus}`
-      });
+      if (controllerStatus === 'ACK') {
+        if (!commandId.trim()) {
+          // Acknowledge all active pending transitions cleanly
+          const res = await simulateAck(junctionId);
+          setControllerFeedback({
+            type: 'success',
+            text: res.data.message || 'Successfully synchronized hardware state'
+          });
+        } else {
+          // Specific command ID requested (tests validation & rejection)
+          const eventPayload = {
+            command_id: commandId.trim(),
+            junction_id: junctionId,
+            direction: controllerDirection,
+            status: 'ACK',
+            actual_state: controllerState
+          };
+          await submitControllerEvent(eventPayload);
+          setControllerFeedback({
+            type: 'success',
+            text: `Hardware ACK confirmed for command '${commandId.trim()}'`
+          });
+        }
+      } else if (controllerStatus === 'OFFLINE' || controllerStatus === 'ONLINE') {
+        await submitControllerEvent({
+          junction_id: junctionId,
+          status: controllerStatus
+        });
+        setControllerFeedback({
+          type: 'success',
+          text: `Roadside controller transitioned to ${controllerStatus}`
+        });
+      } else {
+        // NACK / FAILED
+        const eventPayload = {
+          junction_id: junctionId,
+          status: controllerStatus,
+          direction: controllerDirection,
+          actual_state: controllerState,
+          ...(commandId.trim() ? { command_id: commandId.trim() } : {})
+        };
+        await submitControllerEvent(eventPayload);
+        setControllerFeedback({
+          type: 'success',
+          text: `Controller event registered: ${controllerStatus}`
+        });
+      }
       if (onEventSimulated) onEventSimulated();
     } catch (err) {
       setControllerFeedback({
@@ -79,13 +114,36 @@ export default function SimulationPanel({ junctionId, onEventSimulated }) {
   };
 
   const triggerEmergencyPreset = () => {
-    const emVehicleId = `ambulance_${Date.now() % 10000}`;
     handleSendSensorEvent({
-      event_id: `evt_emergency_${Date.now()}`,
+      event_id: `evt_emergency_east_${Date.now()}`,
       junction_id: junctionId,
       direction: 'EAST',
       event_type: 'VEHICLE_ARRIVED',
-      vehicle_id: emVehicleId,
+      vehicle_id: 'amb_east_01',
+      vehicle_type: 'EMERGENCY',
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  const triggerSecondEmergencyPreset = () => {
+    handleSendSensorEvent({
+      event_id: `evt_emergency_north_${Date.now()}`,
+      junction_id: junctionId,
+      direction: 'NORTH',
+      event_type: 'VEHICLE_ARRIVED',
+      vehicle_id: 'amb_north_02',
+      vehicle_type: 'EMERGENCY',
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  const triggerClearEmergencyPreset = () => {
+    handleSendSensorEvent({
+      event_id: `evt_clear_east_${Date.now()}`,
+      junction_id: junctionId,
+      direction: 'EAST',
+      event_type: 'VEHICLE_CLEARED',
+      vehicle_id: 'amb_east_01',
       vehicle_type: 'EMERGENCY',
       timestamp: new Date().toISOString()
     });
@@ -114,7 +172,13 @@ export default function SimulationPanel({ junctionId, onEventSimulated }) {
         <div className="presets-group">
           <span className="presets-label">Quick Presets:</span>
           <button className="btn-tertiary preset-btn-emergency" onClick={triggerEmergencyPreset}>
-            🚨 Ambulance to EAST
+            🚨 Ambulance EAST
+          </button>
+          <button className="btn-tertiary preset-btn-emergency" onClick={triggerSecondEmergencyPreset} title="Test multi-emergency queuing">
+            🚨 Firetruck NORTH
+          </button>
+          <button className="btn-tertiary preset-btn" onClick={triggerClearEmergencyPreset} title="Clear EAST emergency vehicle">
+            🚑 Clear EAST
           </button>
           <button className="btn-tertiary preset-btn" onClick={triggerDuplicatePreset}>
             🔁 Duplicate Test
@@ -221,6 +285,18 @@ export default function SimulationPanel({ junctionId, onEventSimulated }) {
               </select>
             </div>
           </div>
+
+          {(controllerStatus === 'ACK' || controllerStatus === 'NACK') && (
+            <div className="field-group">
+              <label>Target Command ID (optional for ACK)</label>
+              <input
+                type="text"
+                placeholder="Leave empty to sync active commands, or type ID to test rejection"
+                value={commandId}
+                onChange={(e) => setCommandId(e.target.value)}
+              />
+            </div>
+          )}
 
           <button
             className="btn-secondary form-submit-btn"

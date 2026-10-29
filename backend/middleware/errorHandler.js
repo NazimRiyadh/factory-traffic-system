@@ -2,7 +2,7 @@
  * Global Express Error Handling Middleware.
  */
 
-const logger = require('../utils/logger');
+import logger from '../utils/logger.js';
 
 function errorHandler(err, req, res, next) {
   logger.error(`Unhandled error on ${req.method} ${req.url}:`, {
@@ -18,4 +18,4 @@ function errorHandler(err, req, res, next) {
   });
 }
 
-module.exports = errorHandler;
+export default errorHandler;

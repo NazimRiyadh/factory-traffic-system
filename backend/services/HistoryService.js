@@ -20,4 +20,4 @@ class HistoryService {
   }
 }
 
-module.exports = HistoryService;
+export default HistoryService;

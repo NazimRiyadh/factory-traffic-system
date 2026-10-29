@@ -1,5 +1,5 @@
 /**
- * EventRepository — Tracking processed sensor events for deduplication.
+ * EventRepository — Persistent tracking of processed sensor events for deduplication.
  */
 
 class EventRepository {
@@ -21,7 +21,14 @@ class EventRepository {
     `).run(eventId, junctionId);
   }
 
-  getProcessedEventIds(junctionId, limit = 500) {
+  insertProcessed(eventId, junctionId) {
+    return this.db.prepare(`
+      INSERT INTO processed_events (event_id, junction_id)
+      VALUES (?, ?)
+    `).run(eventId, junctionId);
+  }
+
+  getProcessedEventIds(junctionId, limit = 1000) {
     const rows = this.db.prepare(`
       SELECT event_id FROM processed_events
       WHERE junction_id = ?
@@ -32,4 +39,4 @@ class EventRepository {
   }
 }
 
-module.exports = EventRepository;
+export default EventRepository;

@@ -9,7 +9,7 @@ import SimulationBenchView from './SimulationBenchView';
 import AuditTrailView from './AuditTrailView';
 import SystemRulesView from './SystemRulesView';
 
-import { RefreshCw, RotateCcw, AlertOctagon } from 'lucide-react';
+import { RefreshCw, RotateCcw } from 'lucide-react';
 
 export default function Dashboard() {
   const [junctionId, setJunctionId] = useState('A');

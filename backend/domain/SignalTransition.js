@@ -3,24 +3,24 @@
  * needed to transition from one phase to another.
  *
  * A phase switch MUST always follow this sequence:
- *   1. Current phase → YELLOW  (5 seconds)
- *   2. ALL directions → RED    (2 seconds clearance)
- *   3. New phase → GREEN       (30 seconds)
+ *   1. Current phase -> YELLOW  (5 seconds)
+ *   2. ALL directions -> RED    (2 seconds clearance)
+ *   3. New phase -> GREEN       (30 seconds)
  *
- * A GREEN → conflicting GREEN transition is NEVER allowed.
- * This module is pure logic with zero I/O dependencies.
+ * A GREEN -> conflicting GREEN transition is NEVER allowed.
+ * Pure logic with zero I/O dependencies.
  */
 
-const SignalPhase = require('./SignalPhase');
+import SignalPhase from './SignalPhase.js';
 
-const TRANSITION_STEPS = {
+export const TRANSITION_STEPS = {
   YELLOW: 'YELLOW',
   ALL_RED: 'ALL_RED',
   GREEN: 'GREEN',
   NONE: 'NONE',
 };
 
-class SignalTransition {
+export class SignalTransition {
   /**
    * Calculate the full sequence of transition steps needed to go from
    * currentPhase to targetPhase.
@@ -28,9 +28,35 @@ class SignalTransition {
    * @param {string} currentPhase - e.g., 'NORTH_SOUTH'
    * @param {string} targetPhase  - e.g., 'EAST_WEST'
    * @param {object} config       - must have YELLOW_DURATION, ALL_RED_DURATION, GREEN_DURATION
+   * @param {string|null} fromStep - optional step if superseding ('YELLOW' or 'ALL_RED')
    * @returns {Array<{step: string, signals: object, duration: number}>}
    */
-  static calculateTransition(currentPhase, targetPhase, config) {
+  static calculateTransition(currentPhase, targetPhase, config, fromStep = null) {
+    if (fromStep === TRANSITION_STEPS.YELLOW) {
+      return [
+        {
+          step: TRANSITION_STEPS.ALL_RED,
+          signals: SignalPhase.getAllRed(),
+          duration: config.ALL_RED_DURATION || 2000,
+        },
+        {
+          step: TRANSITION_STEPS.GREEN,
+          signals: SignalPhase.getSignalStatesForPhase(targetPhase),
+          duration: config.GREEN_DURATION || 30000,
+        },
+      ];
+    }
+
+    if (fromStep === TRANSITION_STEPS.ALL_RED) {
+      return [
+        {
+          step: TRANSITION_STEPS.GREEN,
+          signals: SignalPhase.getSignalStatesForPhase(targetPhase),
+          duration: config.GREEN_DURATION || 30000,
+        },
+      ];
+    }
+
     // If already in the target phase, no transition needed
     if (currentPhase === targetPhase) {
       return [{ step: TRANSITION_STEPS.NONE, signals: null, duration: 0 }];
@@ -92,4 +118,4 @@ class SignalTransition {
   }
 }
 
-module.exports = { SignalTransition, TRANSITION_STEPS };
+export default { SignalTransition, TRANSITION_STEPS };

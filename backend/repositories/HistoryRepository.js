@@ -64,4 +64,4 @@ class HistoryRepository {
   }
 }
 
-module.exports = HistoryRepository;
+export default HistoryRepository;

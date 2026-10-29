@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, CheckCircle, AlertTriangle, Layers, Cpu } from 'lucide-react';
+import { ShieldAlert, CheckCircle, Layers, Cpu } from 'lucide-react';
 
 export default function SystemRulesView() {
   return (

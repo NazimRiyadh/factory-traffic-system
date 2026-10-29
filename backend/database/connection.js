@@ -5,9 +5,9 @@
  * Provides a singleton database connection.
  */
 
-const Database = require('better-sqlite3');
-const path = require('path');
-const config = require('../config');
+import Database from 'better-sqlite3';
+import path from 'path';
+import config from '../config/index.js';
 
 let db = null;
 
@@ -16,7 +16,7 @@ let db = null;
  * Creates the connection on first call with WAL mode and foreign keys enabled.
  * @returns {Database} better-sqlite3 database instance
  */
-function getDb() {
+export function getDb() {
   if (!db) {
     const dbPath = path.resolve(config.DB_PATH);
     db = new Database(dbPath);
@@ -30,11 +30,11 @@ function getDb() {
  * Close the database connection.
  * Call this during graceful shutdown.
  */
-function closeDb() {
+export function closeDb() {
   if (db) {
     db.close();
     db = null;
   }
 }
 
-module.exports = { getDb, closeDb };
+export default { getDb, closeDb };

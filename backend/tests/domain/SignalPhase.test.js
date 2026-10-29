@@ -1,5 +1,5 @@
-const SignalPhase = require('../../domain/SignalPhase');
-const { SIGNAL_STATES } = require('../../domain/constants');
+import SignalPhase from '../../domain/SignalPhase.js';
+import { SIGNAL_STATES } from '../../domain/constants.js';
 
 describe('SignalPhase', () => {
   test('getPhaseForDirection returns correct phase', () => {

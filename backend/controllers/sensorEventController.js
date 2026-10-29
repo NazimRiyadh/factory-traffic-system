@@ -17,4 +17,4 @@ class SensorEventController {
   };
 }
 
-module.exports = SensorEventController;
+export default SensorEventController;

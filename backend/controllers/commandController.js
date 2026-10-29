@@ -18,4 +18,4 @@ class CommandController {
   };
 }
 
-module.exports = CommandController;
+export default CommandController;

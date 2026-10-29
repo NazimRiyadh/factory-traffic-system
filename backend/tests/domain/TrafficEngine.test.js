@@ -1,6 +1,6 @@
-const TrafficEngine = require('../../domain/TrafficEngine');
-const { JUNCTION_MODES, VEHICLE_TYPES, EVENT_TYPES } = require('../../domain/constants');
-const config = require('../../config');
+import TrafficEngine from '../../domain/TrafficEngine.js';
+import { JUNCTION_MODES, VEHICLE_TYPES, EVENT_TYPES } from '../../domain/constants.js';
+import config from '../../config/index.js';
 
 describe('TrafficEngine', () => {
   let baseJunctionState;

@@ -58,8 +58,16 @@ class JunctionRepository {
       };
     }
 
+    let parsedEmergencyQueue = [];
+    try {
+      parsedEmergencyQueue = junction.emergency_queue ? JSON.parse(junction.emergency_queue) : [];
+    } catch (_) {
+      parsedEmergencyQueue = [];
+    }
+
     return {
       ...junction,
+      emergency_queue: parsedEmergencyQueue,
       signals,
       queues
     };
@@ -70,8 +78,8 @@ class JunctionRepository {
 
     const insertTx = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO junctions (id, name, mode, current_phase, controller_status)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO junctions (id, name, mode, current_phase, controller_status, phase_started_at, emergency_queue)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), '[]')
       `).run(id, name, mode, current_phase, controller_status);
 
       const insertSignal = this.db.prepare(`
@@ -120,7 +128,18 @@ class JunctionRepository {
     );
   }
 
-  updateEmergency(id, mode, direction, startedAt) {
+  updateEmergency(id, mode, direction, startedAt, emergencyQueue = null) {
+    if (emergencyQueue !== null) {
+      return this.db.prepare(`
+        UPDATE junctions
+        SET mode = ?,
+            emergency_direction = ?,
+            emergency_started_at = ?,
+            emergency_queue = ?,
+            updated_at = datetime('now')
+        WHERE id = ?
+      `).run(mode, direction || null, startedAt || null, JSON.stringify(emergencyQueue), id);
+    }
     return this.db.prepare(`
       UPDATE junctions
       SET mode = ?,
@@ -131,13 +150,33 @@ class JunctionRepository {
     `).run(mode, direction || null, startedAt || null, id);
   }
 
-  updatePhase(id, phase) {
+  updateEmergencyQueue(id, emergencyQueue) {
+    return this.db.prepare(`
+      UPDATE junctions
+      SET emergency_queue = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(emergencyQueue || []), id);
+  }
+
+  updateTransitioning(id, transitioning, step = null) {
+    return this.db.prepare(`
+      UPDATE junctions
+      SET transitioning = ?,
+          transition_step = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(transitioning ? 1 : 0, step, id);
+  }
+
+  updatePhase(id, phase, phaseStartedAt = null) {
     return this.db.prepare(`
       UPDATE junctions
       SET current_phase = ?,
+          phase_started_at = COALESCE(?, datetime('now')),
           updated_at = datetime('now')
       WHERE id = ?
-    `).run(phase, id);
+    `).run(phase, phaseStartedAt, id);
   }
 
   updateControllerStatus(id, status) {
@@ -188,7 +227,7 @@ class JunctionRepository {
     const updateTx = this.db.transaction(() => {
       // 1. Update queue record
       const firstVehicleAt = queueData.vehicles && queueData.vehicles.length > 0
-        ? queueData.vehicles[0].arrived_at
+        ? (queueData.first_vehicle_at || queueData.vehicles[0].arrived_at)
         : null;
 
       this.db.prepare(`
@@ -197,7 +236,7 @@ class JunctionRepository {
             first_vehicle_at = ?,
             updated_at = datetime('now')
         WHERE junction_id = ? AND direction = ?
-      `).run(queueData.vehicle_count, firstVehicleAt, junctionId, direction);
+      `).run(Math.max(0, queueData.vehicle_count || 0), firstVehicleAt, junctionId, direction);
 
       // 2. Clear old queue vehicles for this direction
       this.db.prepare(`
@@ -222,4 +261,4 @@ class JunctionRepository {
   }
 }
 
-module.exports = JunctionRepository;
+export default JunctionRepository;

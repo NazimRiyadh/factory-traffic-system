@@ -29,4 +29,4 @@ class HistoryController {
   };
 }
 
-module.exports = HistoryController;
+export default HistoryController;

@@ -70,4 +70,4 @@ class JunctionController {
   };
 }
 
-module.exports = JunctionController;
+export default JunctionController;

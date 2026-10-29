@@ -2,6 +2,13 @@ import React from 'react';
 import { Clock } from 'lucide-react';
 
 export default function QueueDisplay({ queues = {} }) {
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const directions = ['NORTH', 'SOUTH', 'EAST', 'WEST'];
   const maxQueueLimit = 10;
   const safeQueues = queues || {};
@@ -25,7 +32,7 @@ export default function QueueDisplay({ queues = {} }) {
           let isStarving = false;
           let waitSeconds = 0;
           if (q.first_vehicle_at) {
-            waitSeconds = Math.max(0, Math.round((Date.now() - new Date(q.first_vehicle_at).getTime()) / 1000));
+            waitSeconds = Math.max(0, Math.round((now - new Date(q.first_vehicle_at).getTime()) / 1000));
             if (waitSeconds >= 60) {
               isStarving = true;
             }

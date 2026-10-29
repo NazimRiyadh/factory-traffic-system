@@ -20,6 +20,7 @@ export default function LiveOperationsView({
         <EmergencyBanner
           emergencyDirection={status.emergency_direction}
           emergencyStartedAt={status.emergency_started_at}
+          emergencyQueue={status.emergency_queue}
         />
       )}
 

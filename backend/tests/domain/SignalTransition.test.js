@@ -1,5 +1,5 @@
-const { SignalTransition, TRANSITION_STEPS } = require('../../domain/SignalTransition');
-const config = require('../../config');
+import { SignalTransition, TRANSITION_STEPS } from '../../domain/SignalTransition.js';
+import config from '../../config/index.js';
 
 describe('SignalTransition', () => {
   test('returns NONE step when targetPhase is equal to currentPhase', () => {

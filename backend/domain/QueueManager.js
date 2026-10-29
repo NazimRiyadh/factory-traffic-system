@@ -6,7 +6,7 @@
  * Zero I/O dependencies.
  */
 
-const { VEHICLE_TYPES } = require('./constants');
+import { VEHICLE_TYPES } from './constants.js';
 
 class QueueManager {
   /**
@@ -98,56 +98,70 @@ class QueueManager {
   static getHighestPriority(vehicles, priorityMap) {
     if (!vehicles || vehicles.length === 0) return null;
 
-    return vehicles.reduce((highest, v) => {
-      const currentPriority = priorityMap[v.vehicle_type] || 0;
-      const highestPriority = priorityMap[highest.vehicle_type] || 0;
-      return currentPriority > highestPriority ? v : highest;
-    }, vehicles[0]);
+    let highest = null;
+    let highestWeight = -1;
+
+    for (const v of vehicles) {
+      const weight = priorityMap[v.vehicle_type] || 0;
+      if (weight > highestWeight) {
+        highestWeight = weight;
+        highest = v;
+      }
+    }
+
+    return highest;
   }
 
   /**
-   * Check if any direction queue has an emergency vehicle.
+   * Check if any emergency vehicles are currently in the queues.
    *
-   * @param {object} queues - { NORTH: { vehicles: [...] }, SOUTH: {...}, ... }
-   * @returns {object} - { hasEmergency: boolean, direction?: string }
+   * @param {object} queues - { NORTH: {...}, SOUTH: {...}, ... }
+   * @returns {{ hasEmergency: boolean, direction: string|null, vehicle: object|null }}
    */
   static hasEmergencyVehicle(queues) {
     for (const [direction, queue] of Object.entries(queues)) {
-      const vehicles = queue.vehicles || [];
-      if (vehicles.some(v => v.vehicle_type === VEHICLE_TYPES.EMERGENCY)) {
-        return { hasEmergency: true, direction };
+      if (queue.vehicles && queue.vehicles.length > 0) {
+        const emergency = queue.vehicles.find(v => v.vehicle_type === VEHICLE_TYPES.EMERGENCY);
+        if (emergency) {
+          return {
+            hasEmergency: true,
+            direction,
+            vehicle: emergency,
+          };
+        }
       }
     }
-    return { hasEmergency: false, direction: null };
+    return { hasEmergency: false, direction: null, vehicle: null };
   }
 
   /**
-   * Get total vehicle count across all queues.
+   * Calculate waiting time in seconds for a queue.
    *
-   * @param {object} queues
-   * @returns {number}
+   * @param {object} queue
+   * @param {number} now - current timestamp ms
+   * @returns {number} waiting time in seconds
    */
-  static getTotalVehicleCount(queues) {
-    let total = 0;
-    for (const queue of Object.values(queues)) {
-      total += queue.vehicle_count || 0;
-    }
-    return total;
+  static getWaitingTimeSeconds(queue, now = Date.now()) {
+    if (!queue || !queue.first_vehicle_at) return 0;
+    const firstAt = new Date(queue.first_vehicle_at).getTime();
+    return Math.max(0, (now - firstAt) / 1000);
   }
 
   /**
-   * Get simple queue counts object for API response.
+   * Check if a queue is starving (waiting longer than threshold).
    *
-   * @param {object} queues
-   * @returns {object} - { NORTH: 3, SOUTH: 1, EAST: 7, WEST: 2 }
+   * @param {object} queue
+   * @param {number} thresholdMs - e.g. 60000 (60s)
+   * @param {number} now
+   * @returns {boolean}
    */
-  static getQueueCounts(queues) {
-    const counts = {};
-    for (const [direction, queue] of Object.entries(queues)) {
-      counts[direction] = queue.vehicle_count || 0;
+  static isStarving(queue, thresholdMs = 60000, now = Date.now()) {
+    if (!queue || !queue.first_vehicle_at || (queue.vehicle_count || 0) === 0) {
+      return false;
     }
-    return counts;
+    const firstAt = new Date(queue.first_vehicle_at).getTime();
+    return (now - firstAt) > thresholdMs;
   }
 }
 
-module.exports = QueueManager;
+export default QueueManager;

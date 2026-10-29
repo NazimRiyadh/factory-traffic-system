@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw } from 'lucide-react';
 
 export default function AuditTrailView({ history = [], onRefresh }) {
   const [filterType, setFilterType] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const safeHistory = Array.isArray(history) ? history : [];
-
   const filteredHistory = useMemo(() => {
+    const safeHistory = Array.isArray(history) ? history : [];
     return safeHistory.filter((item) => {
       // Filter by category
       if (filterType === 'EMERGENCY' && !item.event_type.includes('EMERGENCY')) return false;
@@ -27,7 +26,7 @@ export default function AuditTrailView({ history = [], onRefresh }) {
 
       return true;
     });
-  }, [safeHistory, filterType, searchTerm]);
+  }, [history, filterType, searchTerm]);
 
   const getTagStyle = (eventType) => {
     if (eventType.includes('EMERGENCY')) return 'tag-red';

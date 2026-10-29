@@ -7,9 +7,9 @@ class ControllerEventController {
     this.controllerService = controllerService;
   }
 
-  processEvent = (req, res, next) => {
+  processEvent = async (req, res, next) => {
     try {
-      const result = this.controllerService.processControllerEvent(req.body);
+      const result = await this.controllerService.processControllerEvent(req.body);
       res.status(result.statusCode || 200).json(result);
     } catch (err) {
       next(err);
@@ -17,4 +17,4 @@ class ControllerEventController {
   };
 }
 
-module.exports = ControllerEventController;
+export default ControllerEventController;

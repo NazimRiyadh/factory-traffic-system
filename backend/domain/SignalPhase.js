@@ -7,10 +7,10 @@
  *   - EAST_WEST phase:   EAST  + WEST  get GREEN
  *
  * These two phases conflict — they must NEVER be GREEN at the same time.
- * This module is pure logic with zero I/O dependencies.
+ * Pure logic with zero I/O dependencies.
  */
 
-const { PHASES, SIGNAL_STATES, DIRECTIONS } = require('./constants');
+import { PHASES, SIGNAL_STATES, DIRECTIONS } from './constants.js';
 
 class SignalPhase {
   /**
@@ -133,4 +133,4 @@ class SignalPhase {
   }
 }
 
-module.exports = SignalPhase;
+export default SignalPhase;
